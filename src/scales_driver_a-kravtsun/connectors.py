@@ -9,7 +9,7 @@ class Connector(ABC):
     Interface for connecting to scales.
     """
 
-    @abstractmethod
+    # @abstractmethod
     async def connect(self) -> int:
         """
         Establishes a connection with the scale.
@@ -22,14 +22,14 @@ class Connector(ABC):
     #     """
 
     @abstractmethod
-    async def read(self, data_len: None | int = None) -> str:
+    async def read(self, data_len: None | int = None) -> bytes:
         """
         Reading data from scales.
         :param data_len: Length of data read in bytes.
         """
 
     @abstractmethod
-    async def write(self, data: str) -> int:
+    async def write(self, data: bytes) -> int:
         """
         Writing data to the scale.
         """
@@ -68,5 +68,5 @@ class SerialConnector(Connector):
             data = None
         return data
 
-    def write(self, data: bytes) -> None:
+    async def write(self, data: bytes) -> None:
         self.writer.write(data)

@@ -1,6 +1,7 @@
 import asyncio
 
 from connectors import SerialConnector
+from drivers import CASType6
 
 
 async def main():
@@ -14,14 +15,16 @@ async def main():
         timeout=0.1
     )
     await connector.connect()
+    scales = CASType6(connector)
+    await scales.get_weight()
 
-    while True:
-        message = b'test message'
-        connector.write(message)
-        print('Message sent:', message)
-        received = await connector.read(50)
-        print('Received:', received)
-        await asyncio.sleep(1)
+    # while True:
+    #     message = b'test message'
+    #     await connector.write(message)
+    #     print('Message sent:', message)
+    #     received = await connector.read(50)
+    #     print('Received:', received)
+    #     await asyncio.sleep(1)
 
 
 if __name__ == '__main__':
