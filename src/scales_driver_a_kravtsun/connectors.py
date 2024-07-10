@@ -83,11 +83,11 @@ class SocketConnector(Connector):
                 await self.connect()
             data = await asyncio.wait_for(self.reader.read(data_len), 2)
             return data
-        except TimeoutError:
-            raise ConnectionError('Timed out waiting for data')
         except ConnectionError as err:
             self.reader = self.writer = None
             raise err
+        except TimeoutError:
+            raise ConnectionError('Timed out waiting for data')
 
     async def write(self, data: bytes) -> None:
         try:
