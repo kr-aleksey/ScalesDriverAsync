@@ -1,3 +1,4 @@
+import asyncio
 from abc import ABC, abstractmethod
 
 from serial.serialutil import SerialException
@@ -8,18 +9,9 @@ class Connector(ABC):
     """
     Interface for connecting to scales.
     """
-
-    # @abstractmethod
-    async def connect(self) -> int:
-        """
-        Establishes a connection with the scale.
-        """
-
-    # @abstractmethod
-    # def disconnect(self) -> None:
-    #     """
-    #     Closes the connection to the scale.
-    #     """
+    def __init__(self, url: str):
+        self.url = url
+        self.reader = self.writer = None
 
     @abstractmethod
     async def read(self, data_len: None | int = None) -> bytes:
@@ -70,3 +62,39 @@ class SerialConnector(Connector):
 
     async def write(self, data: bytes) -> None:
         self.writer.write(data)
+
+
+class SocketConnector(Connector):
+
+    def __init__(self, url: str):
+        super().__init__(url)
+        try:
+            self.host, self.port = url.split(':')
+        except ValueError:
+            raise ConnectionError(
+                f'Invalid url "{url}". {__class__.__name__} expects '
+                f'a URL in the format <host:port>.'
+            )
+
+    async def read(self, data_len: None | int = None) -> bytes:
+        try:
+            if self.reader is None:
+                await self.connect()
+            return await self.reader.read(data_len)
+        except ConnectionError as err:
+            self.reader = self.writer = None
+            raise err
+
+    async def write(self, data: bytes) -> None:
+        try:
+            if self.writer is None:
+                await self.connect()
+            self.writer.write(data)
+            await self.writer.drain()
+        except ConnectionError as err:
+            self.reader = self.writer = None
+            raise err
+
+    async def connect(self) -> None:
+        self.reader, self.writer = await asyncio.open_connection(
+            self.host, self.port)
