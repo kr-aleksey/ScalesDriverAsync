@@ -9,7 +9,7 @@ async def poller(device):
         try:
             value = await device.get_weight(1)
             print(f'{value}')
-        except ValueError as err:
+        except (ValueError, ConnectionError) as err:
             print('err:', err)
 
         await asyncio.sleep(1)

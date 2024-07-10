@@ -81,7 +81,10 @@ class SocketConnector(Connector):
         try:
             if self.reader is None:
                 await self.connect()
-            return await self.reader.read(data_len)
+            data = await asyncio.wait_for(self.reader.read(data_len), 2)
+            return data
+        except TimeoutError:
+            raise ConnectionError('Timed out waiting for data')
         except ConnectionError as err:
             self.reader = self.writer = None
             raise err
@@ -92,10 +95,13 @@ class SocketConnector(Connector):
                 await self.connect()
             self.writer.write(data)
             await self.writer.drain()
-        except ConnectionError as err:
+        except (ConnectionError, OSError )as err:
             self.reader = self.writer = None
             raise err
 
     async def connect(self) -> None:
-        self.reader, self.writer = await asyncio.open_connection(
-            self.host, self.port)
+        try:
+            self.reader, self.writer = await asyncio.open_connection(
+                self.host, self.port)
+        except OSError as err:
+            raise ConnectionError(err)

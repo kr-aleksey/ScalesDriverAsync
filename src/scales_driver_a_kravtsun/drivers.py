@@ -7,26 +7,35 @@ from exeptions import ScalesError
 
 class ScalesDriver(ABC):
     """
-    Scales driver interface.
+    Интерфейс драйвера весов.
     """
-    GR = 1
-    KG = 2
-    LB = 3
-
-    STABLE: int = 1
-    UNSTABLE: int = 2
-    OVERLOAD: int = 3
+    # Единицы измерения веса
+    UNIT_GR = 1
+    UNIT_KG = 2
+    UNIT_LB = 3
+    # Статус весов
+    STATUS_STABLE = 1
+    STATUS_UNSTABLE = 2
+    STATUS_OVERLOAD = 3
 
     def __init__(self, connector: Connector):
+        """
+        :param connector: экземпляр класса Connector
+        """
         self.connector = connector
 
     @abstractmethod
     async def get_info(self) -> dict:
-        """Return scales info."""
+        """Возвращает информацию о весах."""
 
     @abstractmethod
     async def get_weight(self, measure_unit: int) -> tuple[Decimal, int]:
-        """Return tuple (weight, measure unit, status)."""
+        """
+        Получает показания весов. Возвращает результат кортежем (вес, статус).
+        Статус может иметь значения: STATUS_STABLE, STATUS_UNSTABLE,
+        STATUS_OVERLOAD.
+        :param measure_unit: Единица измерения, в которой будет возвращен вес.
+        """
 
 
 class CASType6(ScalesDriver):
@@ -60,38 +69,45 @@ class CASType6(ScalesDriver):
 
 
 class MassK1C(ScalesDriver):
+    """
+    Драйвер весов Масса-К. Протокол "1С".
+    """
     HEADER = b'\xF8\x55\xCE'
+    HEADER_SLICE = slice(0, 3)
+    DATA_LEN_SLICE = slice(3, 5)
+    DATA_START = 5
+
+    CMD_POLL = b'\x00'
+    CMD_GET_WEIGHT = b'\xA0'
+
+    CMD_ACK = {
+        CMD_POLL: b'\x01',
+        CMD_GET_WEIGHT: b'\x10',
+    }
+
+    CMD_RESPONSE_LEN = {
+        CMD_POLL: 34,
+        CMD_GET_WEIGHT: 14
+    }
 
     async def get_info(self) -> dict:
         return {}
 
-    async def send_command(self, command: bytes):
+    async def exec_command(self, command: bytes) -> bytes:
         data = self.HEADER + len(command).to_bytes(
             length=2) + command + b'\x00\x00'
-        try:
-            await self.connector.write(data)
-        except ConnectionError as err:
-            print(err)
-            # self.writer.close()
-            # await self.writer.wait_closed()
-            raise err
-
-    async def read_result(self):
-        header_slice = slice(0, 3)
-        len_slice = slice(3, 5)
-        data_start = 5
+        await self.connector.write(data)
 
         data: bytes = await self.connector.read(1024)
-        if data[header_slice] != self.HEADER:
-            raise ValueError(f'Invalid header: {data[header_slice]}')
-        _len = data[len_slice]
-        data_len = int.from_bytes(data[len_slice], byteorder='little')
-        return data[data_start: data_start + data_len]
+        if data[self.HEADER_SLICE] != self.HEADER:
+            raise ValueError(f'Invalid header: {self.HEADER_SLICE}')
+        data_len = int.from_bytes(data[self.DATA_LEN_SLICE], byteorder='little')
+        return data[self.DATA_START: self.DATA_START + data_len]
+
 
     async def get_weight(self, measure_unit) -> tuple[Decimal, int]:
         command = b'\xA0'
-        await self.send_command(command)
-        data = await self.read_result()
+        data = await self.exec_command(command)
         weight = int.from_bytes(data[1:5], 'little', signed=True)
         #             division=response[10],
         #             stable=response[11]
