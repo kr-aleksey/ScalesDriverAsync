@@ -1,8 +1,8 @@
-from decimal import Decimal
 from abc import ABC, abstractmethod
+from decimal import Decimal
 
-from exeptions import ScalesError
 from connectors import Connector
+from exeptions import ScalesError
 
 
 class ScalesDriver(ABC):
@@ -66,7 +66,8 @@ class MassK1C(ScalesDriver):
         return {}
 
     async def send_command(self, command: bytes):
-        data = self.HEADER + len(command).to_bytes(length=2) + command + b'\x00\x00'
+        data = self.HEADER + len(command).to_bytes(
+            length=2) + command + b'\x00\x00'
         try:
             await self.connector.write(data)
         except ConnectionError as err:

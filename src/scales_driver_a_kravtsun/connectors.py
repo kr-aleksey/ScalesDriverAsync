@@ -9,6 +9,7 @@ class Connector(ABC):
     """
     Interface for connecting to scales.
     """
+
     def __init__(self, url: str):
         self.url = url
         self.reader = self.writer = None
