@@ -95,9 +95,9 @@ class SocketConnector(Connector):
                 await self.connect()
             self.writer.write(data)
             await self.writer.drain()
-        except (ConnectionError, OSError )as err:
+        except (ConnectionError, OSError) as err:
             self.reader = self.writer = None
-            raise err
+            raise ConnectionError(err)
 
     async def connect(self) -> None:
         try:

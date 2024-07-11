@@ -12,7 +12,7 @@ async def poller(device):
         except (ValueError, ConnectionError) as err:
             print('err:', err)
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(0)
 
 
 async def main_coro(devices):

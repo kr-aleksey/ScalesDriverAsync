@@ -37,6 +37,11 @@ class ScalesDriver(ABC):
         :param measure_unit: Единица измерения, в которой будет возвращен вес.
         """
 
+    @staticmethod
+    def to_hex(data: bytes) -> str:
+        return data.hex(sep=':')
+
+
 
 class CASType6(ScalesDriver):
     COMMANDS: dict[str, bytes] = {
@@ -99,16 +104,35 @@ class MassK1C(ScalesDriver):
         await self.connector.write(data)
 
         data: bytes = await self.connector.read(1024)
-        if data[self.HEADER_SLICE] != self.HEADER:
-            raise ValueError(f'Invalid header: {self.HEADER_SLICE}')
-        data_len = int.from_bytes(data[self.DATA_LEN_SLICE], byteorder='little')
-        return data[self.DATA_START: self.DATA_START + data_len]
+        return self.check_response(command, data)
 
+    def check_response(self, command: bytes, data: bytes) -> bytes:
+        if len(data) != self.CMD_RESPONSE_LEN[command]:
+            raise ValueError(
+                f'Incorrect response received from the scale. '
+                f'Received {len(data)} bytes, '
+                f'expected {self.CMD_RESPONSE_LEN[command]} bytes'
+            )
+        if data[self.HEADER_SLICE] != self.HEADER:
+            raise ValueError(
+                f'Incorrect response received from the scale. '
+                f'Invalid header: {self.to_hex(data[self.HEADER_SLICE])}, '
+                f'expected: {self.to_hex(self.HEADER)}')
+        ack = data[self.DATA_START: self.DATA_START + 1]
+        if ack != self.CMD_ACK[command]:
+            raise ValueError(
+                f'Incorrect response received from the scale. '
+                f'Invalid ACK: {self.to_hex(ack)}, '
+                f'expected: {self.to_hex(self.CMD_ACK[command])}'
+            )
+
+        data_len = int.from_bytes(
+            data[self.DATA_LEN_SLICE], byteorder='little')
+        return data[self.DATA_START + 1: self.DATA_START + data_len]
 
     async def get_weight(self, measure_unit) -> tuple[Decimal, int]:
-        command = b'\xA0'
-        data = await self.exec_command(command)
-        weight = int.from_bytes(data[1:5], 'little', signed=True)
+        data = await self.exec_command(self.CMD_GET_WEIGHT)
+        weight = int.from_bytes(data[:4], 'little', signed=True)
         #             division=response[10],
         #             stable=response[11]
         return Decimal(weight), 0
