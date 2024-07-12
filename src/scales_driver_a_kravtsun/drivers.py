@@ -143,45 +143,51 @@ class MassK1C(ScalesDriver):
     def check_response(self, command: bytes, data: bytes) -> bytes:
         """
         Проверяет ответ, полученный от весов.
-        Возвращает полезные данные ответа.
+        Возвращает полезные данные ответа (без заголовка, длины ответа,
+        ACK и CRC).
         :param command: Команда отправленная весам.
         :param data: Ответ полученный от весов.
         :return: Полезные данные.
         """
+        err_msg = ('Incorrect response received from the scale. '
+                   '{detail}. Received: {received}, expected: {expected}.')
+
         # проверяем длину пакета
         if len(data) != self.CMD_RESPONSE_LEN[command]:
             raise ValueError(
-                f'Incorrect response received from the scale. '
-                f'Received {len(data)} bytes, '
-                f'expected {self.CMD_RESPONSE_LEN[command]} bytes'
+                err_msg.format(detail='Invalid response length',
+                               received=len(data),
+                               expected=self.CMD_RESPONSE_LEN[command])
             )
+
         # проверяем header
         if data[self.HEADER_SLICE] != self.HEADER:
             raise ValueError(
-                f'Incorrect response received from the scale. '
-                f'Invalid header: {self.to_hex(data[self.HEADER_SLICE])}, '
-                f'expected: {self.to_hex(self.HEADER)}')
+                err_msg.format(detail='Invalid header',
+                               received=self.to_hex(data[self.HEADER_SLICE]),
+                               expected=self.to_hex(self.HEADER))
+            )
         # проверяем CRC
         computed_crc = self.crc(data[self.DATA_SLICE])
         if computed_crc != data[self.CRC_SLICE]:
             raise ValueError(
-                f'Incorrect response received from the scale. Invalid CRC. '
-                f'Received: {self.to_hex(data[self.CRC_SLICE])}, '
-                f'computed: {self.to_hex(computed_crc)}'
+                err_msg.format(detail='Invalid CRC',
+                               received=self.to_hex(data[self.CRC_SLICE]),
+                               expected=self.to_hex(computed_crc))
             )
         # проверяем байт ACK
         if data[self.ACK_SLICE] != self.CMD_ACK[command]:
             raise ValueError(
-                f'Incorrect response received from the scale. '
-                f'Invalid ACK: {self.to_hex(data[self.ACK_SLICE])}, '
-                f'expected: {self.to_hex(self.CMD_ACK[command])}'
+                err_msg.format(detail='Invalid ACK',
+                               received=self.to_hex(data[self.ACK_SLICE]),
+                               expected=self.to_hex(self.CMD_ACK[command]))
             )
         return data[self.PAYLOAD_SLICE]
 
     @staticmethod
     def crc(data: bytes) -> bytes:
         """
-        Подсчет CRC получаемых / отправляемых данных.
+        Подсчет CRC пакетов данных.
         :param data: Данные.
         :return: CRC
         """
