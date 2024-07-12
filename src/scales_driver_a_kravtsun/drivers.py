@@ -204,6 +204,6 @@ class MassK1C(ScalesDriver):
                 else:
                     accumulator <<= 1
                 temp <<= 1
-            crc = accumulator ^ (crc << 8) ^ (byte & 0xff)
+            crc = accumulator ^ (crc << 8) ^ byte
         crc &= 0xffff
         return crc.to_bytes(length=2, byteorder='little')
