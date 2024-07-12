@@ -39,8 +39,12 @@ class ScalesDriver(ABC):
 
     @staticmethod
     def to_hex(data: bytes) -> str:
+        """
+        Возвращает текстовое представление байт-строки.
+        :param data: Данные.
+        :return: Текстовое представление.
+        """
         return data.hex(sep=':')
-
 
 
 class CASType6(ScalesDriver):
@@ -77,62 +81,121 @@ class MassK1C(ScalesDriver):
     """
     Драйвер весов Масса-К. Протокол "1С".
     """
+    # Заголовок пакетов
     HEADER = b'\xF8\x55\xCE'
-    HEADER_SLICE = slice(0, 3)
-    DATA_LEN_SLICE = slice(3, 5)
-    DATA_START = 5
 
+    # Срезы ответных пакетов
+    HEADER_SLICE = slice(0, 3)
+    DATA_SLICE = slice(5, -2)
+    ACK_SLICE = slice(5, 6)
+    PAYLOAD_SLICE = slice(6, -2)
+    CRC_SLICE = slice(-2, None)
+
+    # Срезы полезной нагрузки ответов
+    WEIGHT_SLICE = slice(0, 4)
+
+    # Команды исполняемые весами
     CMD_POLL = b'\x00'
     CMD_GET_WEIGHT = b'\xA0'
 
+    # Ответные команды
     CMD_ACK = {
         CMD_POLL: b'\x01',
         CMD_GET_WEIGHT: b'\x10',
     }
 
+    # Ожидаемые длины ответов
     CMD_RESPONSE_LEN = {
         CMD_POLL: 34,
         CMD_GET_WEIGHT: 14
     }
 
+    """
+    Интерфейс драйвера.
+    """
+
     async def get_info(self) -> dict:
         return {}
 
+    async def get_weight(self, measure_unit) -> tuple[Decimal, int]:
+        data = await self.exec_command(self.CMD_GET_WEIGHT)
+        weight = int.from_bytes(
+            data[self.WEIGHT_SLICE], 'little', signed=True)
+        return Decimal(weight), 0
+
+    """
+    Протокол весов.
+    """
+
     async def exec_command(self, command: bytes) -> bytes:
-        data = self.HEADER + len(command).to_bytes(
-            length=2) + command + b'\x00\x00'
+        """
+        Подготавливает и отправляет запрос. Возвращает полезные данные ответа.
+        :param command: Выполняемая команда (CMD_GET_WEIGHT, CMD_POLL ...).
+        :return: Данные ответа.
+        """
+        data = self.HEADER + len(command).to_bytes(length=2) + command
+        data += self.crc(data)
         await self.connector.write(data)
 
         data: bytes = await self.connector.read(1024)
         return self.check_response(command, data)
 
     def check_response(self, command: bytes, data: bytes) -> bytes:
+        """
+        Проверяет ответ, полученный от весов.
+        Возвращает полезные данные ответа.
+        :param command: Команда отправленная весам.
+        :param data: Ответ полученный от весов.
+        :return: Полезные данные.
+        """
+        # проверяем длину пакета
         if len(data) != self.CMD_RESPONSE_LEN[command]:
             raise ValueError(
                 f'Incorrect response received from the scale. '
                 f'Received {len(data)} bytes, '
                 f'expected {self.CMD_RESPONSE_LEN[command]} bytes'
             )
+        # проверяем header
         if data[self.HEADER_SLICE] != self.HEADER:
             raise ValueError(
                 f'Incorrect response received from the scale. '
                 f'Invalid header: {self.to_hex(data[self.HEADER_SLICE])}, '
                 f'expected: {self.to_hex(self.HEADER)}')
-        ack = data[self.DATA_START: self.DATA_START + 1]
-        if ack != self.CMD_ACK[command]:
+        # проверяем CRC
+        computed_crc = self.crc(data[self.DATA_SLICE])
+        if computed_crc != data[self.CRC_SLICE]:
+            raise ValueError(
+                f'Incorrect response received from the scale. Invalid CRC. '
+                f'Received: {self.to_hex(data[self.CRC_SLICE])}, '
+                f'computed: {self.to_hex(computed_crc)}'
+            )
+        # проверяем байт ACK
+        if data[self.ACK_SLICE] != self.CMD_ACK[command]:
             raise ValueError(
                 f'Incorrect response received from the scale. '
-                f'Invalid ACK: {self.to_hex(ack)}, '
+                f'Invalid ACK: {self.to_hex(data[self.ACK_SLICE])}, '
                 f'expected: {self.to_hex(self.CMD_ACK[command])}'
             )
+        return data[self.PAYLOAD_SLICE]
 
-        data_len = int.from_bytes(
-            data[self.DATA_LEN_SLICE], byteorder='little')
-        return data[self.DATA_START + 1: self.DATA_START + data_len]
-
-    async def get_weight(self, measure_unit) -> tuple[Decimal, int]:
-        data = await self.exec_command(self.CMD_GET_WEIGHT)
-        weight = int.from_bytes(data[:4], 'little', signed=True)
-        #             division=response[10],
-        #             stable=response[11]
-        return Decimal(weight), 0
+    @staticmethod
+    def crc(data: bytes) -> bytes:
+        """
+        Подсчет CRC получаемых / отправляемых данных.
+        :param data: Данные.
+        :return: CRC
+        """
+        poly = 0x1021
+        crc = 0
+        for byte in data:
+            accumulator = 0
+            temp = crc & 0xff00
+            for _ in range(8):
+                if (temp ^ accumulator) & 0x8000:
+                    accumulator = (accumulator << 1) ^ poly
+                else:
+                    accumulator <<= 1
+                temp <<= 1
+            crc = accumulator ^ (crc << 8) ^ (byte & 0xff)
+        crc &= 0xffff
+        return crc.to_bytes(length=2, byteorder='little')
