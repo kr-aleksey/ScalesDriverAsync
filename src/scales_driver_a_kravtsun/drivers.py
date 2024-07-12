@@ -142,28 +142,26 @@ class MassK1C(ScalesDriver):
 
     def check_response(self, command: bytes, data: bytes) -> bytes:
         """
-        Проверяет ответ, полученный от весов.
-        Возвращает полезные данные ответа (без заголовка, длины ответа,
-        ACK и CRC).
+        Проверяет ответ, полученный от весов. Возвращает полезные данные
+        ответа (без заголовка, длины ответа, ACK и CRC).
         :param command: Команда отправленная весам.
         :param data: Ответ полученный от весов.
         :return: Полезные данные.
         """
-        err_msg = ('Incorrect response received from the scale. '
-                   '{detail}. Received: {received}, expected: {expected}.')
+        err_msg = ('Incorrect response received from the scale. Invalid '
+                   '{subject}. Received: {received}, expected: {expected}.')
 
-        # проверяем длину пакета
+        # проверяем длину
         if len(data) != self.CMD_RESPONSE_LEN[command]:
             raise ValueError(
-                err_msg.format(detail='Invalid response length',
+                err_msg.format(subject='response length',
                                received=len(data),
                                expected=self.CMD_RESPONSE_LEN[command])
             )
-
         # проверяем header
         if data[self.HEADER_SLICE] != self.HEADER:
             raise ValueError(
-                err_msg.format(detail='Invalid header',
+                err_msg.format(subject='header',
                                received=self.to_hex(data[self.HEADER_SLICE]),
                                expected=self.to_hex(self.HEADER))
             )
@@ -171,14 +169,14 @@ class MassK1C(ScalesDriver):
         computed_crc = self.crc(data[self.DATA_SLICE])
         if computed_crc != data[self.CRC_SLICE]:
             raise ValueError(
-                err_msg.format(detail='Invalid CRC',
+                err_msg.format(subject='CRC',
                                received=self.to_hex(data[self.CRC_SLICE]),
                                expected=self.to_hex(computed_crc))
             )
-        # проверяем байт ACK
+        # проверяем ACK
         if data[self.ACK_SLICE] != self.CMD_ACK[command]:
             raise ValueError(
-                err_msg.format(detail='Invalid ACK',
+                err_msg.format(subject='ACK',
                                received=self.to_hex(data[self.ACK_SLICE]),
                                expected=self.to_hex(self.CMD_ACK[command]))
             )
