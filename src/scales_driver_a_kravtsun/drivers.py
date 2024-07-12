@@ -84,21 +84,11 @@ class MassK1C(ScalesDriver):
     # Заголовок пакетов
     HEADER = b'\xF8\x55\xCE'
 
-    # Срезы ответных пакетов
-    HEADER_SLICE = slice(0, 3)
-    DATA_SLICE = slice(5, -2)
-    ACK_SLICE = slice(5, 6)
-    PAYLOAD_SLICE = slice(6, -2)
-    CRC_SLICE = slice(-2, None)
-
-    # Срезы полезной нагрузки ответов
-    WEIGHT_SLICE = slice(0, 4)
-
     # Команды исполняемые весами
     CMD_POLL = b'\x00'
     CMD_GET_WEIGHT = b'\xA0'
 
-    # Ответные команды
+    # Ответные ACK
     CMD_ACK = {
         CMD_POLL: b'\x01',
         CMD_GET_WEIGHT: b'\x10',
@@ -119,8 +109,9 @@ class MassK1C(ScalesDriver):
 
     async def get_weight(self, measure_unit) -> tuple[Decimal, int]:
         data = await self.exec_command(self.CMD_GET_WEIGHT)
+        weight_end = 4
         weight = int.from_bytes(
-            data[self.WEIGHT_SLICE], 'little', signed=True)
+            data[:weight_end], 'little', signed=True)
         return Decimal(weight), 0
 
     """
@@ -148,6 +139,7 @@ class MassK1C(ScalesDriver):
         :param data: Ответ полученный от весов.
         :return: Полезные данные.
         """
+
         err_msg = ('Incorrect response received from the scale. Invalid '
                    '{subject}. Received: {received}, expected: {expected}.')
 
@@ -159,28 +151,40 @@ class MassK1C(ScalesDriver):
                                expected=self.CMD_RESPONSE_LEN[command])
             )
         # проверяем header
-        if data[self.HEADER_SLICE] != self.HEADER:
+        header_end = 3
+        header = data[: header_end]
+        if header != self.HEADER:
             raise ValueError(
                 err_msg.format(subject='header',
-                               received=self.to_hex(data[self.HEADER_SLICE]),
+                               received=self.to_hex(header),
                                expected=self.to_hex(self.HEADER))
             )
         # проверяем CRC
-        computed_crc = self.crc(data[self.DATA_SLICE])
-        if computed_crc != data[self.CRC_SLICE]:
+        data_start = 5
+        data_end = -2
+        crc_start = -2
+        computed_crc = self.crc(data[data_start: data_end])
+        received_crc = data[crc_start:]
+        if computed_crc != data[crc_start:]:
             raise ValueError(
                 err_msg.format(subject='CRC',
-                               received=self.to_hex(data[self.CRC_SLICE]),
+                               received=self.to_hex(received_crc),
                                expected=self.to_hex(computed_crc))
             )
         # проверяем ACK
-        if data[self.ACK_SLICE] != self.CMD_ACK[command]:
+        ack_start = 5
+        ack_end = 6
+        ack = data[ack_start: ack_end]
+        if ack != self.CMD_ACK[command]:
             raise ValueError(
                 err_msg.format(subject='ACK',
-                               received=self.to_hex(data[self.ACK_SLICE]),
+                               received=self.to_hex(ack),
                                expected=self.to_hex(self.CMD_ACK[command]))
             )
-        return data[self.PAYLOAD_SLICE]
+        # возвращаем payload
+        payload_start = 6
+        payload_end = -2
+        return data[payload_start: payload_end]
 
     @staticmethod
     def crc(data: bytes) -> bytes:
