@@ -100,6 +100,14 @@ class MassK1C(ScalesDriver):
         CMD_GET_WEIGHT: 14
     }
 
+    # Цена деления - коэффициент пересчета в граммы
+    DIVISION_RATIO = {
+        0: Decimal('0.1'),
+        1: Decimal('1'),
+        2: Decimal('10'),
+        3: Decimal('100')
+    }
+
     """
     Интерфейс драйвера.
     """
@@ -107,12 +115,16 @@ class MassK1C(ScalesDriver):
     async def get_info(self) -> dict:
         return {}
 
-    async def get_weight(self, measure_unit) -> tuple[Decimal, int]:
+    async def get_weight(self, measure_unit: int) -> tuple[Decimal, int]:
         data = await self.exec_command(self.CMD_GET_WEIGHT)
+        # получаем значение веса
         weight_end = 4
         weight = int.from_bytes(
             data[:weight_end], 'little', signed=True)
-        return Decimal(weight), 0
+        # получаем цену деления, пересчитываем в граммы
+        division_index = 4
+        division = data[division_index]
+        return weight * self.DIVISION_RATIO.get(division, Decimal('0')), 0
 
     """
     Протокол весов.
@@ -125,7 +137,7 @@ class MassK1C(ScalesDriver):
         :return: Данные ответа.
         """
         data = self.HEADER + len(command).to_bytes(length=2) + command
-        data += self.crc(data)
+        data += self.calc_crc(data)
         await self.connector.write(data)
 
         data: bytes = await self.connector.read(1024)
@@ -163,7 +175,7 @@ class MassK1C(ScalesDriver):
         data_start = 5
         data_end = -2
         crc_start = -2
-        computed_crc = self.crc(data[data_start: data_end])
+        computed_crc = self.calc_crc(data[data_start: data_end])
         received_crc = data[crc_start:]
         if computed_crc != data[crc_start:]:
             raise ValueError(
@@ -187,7 +199,7 @@ class MassK1C(ScalesDriver):
         return data[payload_start: payload_end]
 
     @staticmethod
-    def crc(data: bytes) -> bytes:
+    def calc_crc(data: bytes) -> bytes:
         """
         Подсчет CRC пакетов данных.
         :param data: Данные.
