@@ -1,18 +1,18 @@
 import asyncio
 
 from connectors import SerialConnector, SocketConnector
-from drivers import CASType6, MassK1C
+from drivers import CASType6, MassK1C, ScalesDriver
 
 
 async def poller(device):
     while True:
         try:
-            value = await device.get_weight(1)
-            print(f'{value}')
+            value = await device.get_weight(ScalesDriver.UNIT_KG)
+            print(value)
         except (ValueError, ConnectionError) as err:
             print('err:', err)
 
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.2)
 
 
 async def main_coro(devices):

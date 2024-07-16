@@ -12,7 +12,12 @@ class ScalesDriver(ABC):
     # Единицы измерения веса
     UNIT_GR = 0
     UNIT_KG = 1
-    UNIT_LB = 2
+
+    UNIT_DIVIDER = {
+        UNIT_GR: Decimal('1'),
+        UNIT_KG: Decimal('1000'),
+    }
+
     # Статус весов
     STATUS_UNSTABLE = 0
     STATUS_STABLE = 1
@@ -36,6 +41,15 @@ class ScalesDriver(ABC):
         STATUS_OVERLOAD.
         :param measure_unit: Единица измерения, в которой будет возвращен вес.
         """
+
+    def gr_to_unit(self, value: Decimal, measure_unit: int) -> Decimal:
+        """
+        Переводит вес в граммах в заданную единицу.
+        :param value: Вес в граммах
+        :param measure_unit: Единица измерения (UNIT_GR, UNIT_KG)
+        :return: Вес в заданных единицах
+        """
+        return value / self.UNIT_DIVIDER.get(measure_unit, Decimal('1'))
 
     @staticmethod
     def to_hex(data: bytes) -> str:
@@ -91,7 +105,7 @@ class MassK1C(ScalesDriver):
     # Ответные ACK
     CMD_ACK = {
         CMD_POLL: b'\x01',
-        CMD_GET_WEIGHT: b'\x10',
+        CMD_GET_WEIGHT: b'\x10'
     }
 
     # Ожидаемые длины ответов
@@ -119,7 +133,17 @@ class MassK1C(ScalesDriver):
     """
 
     async def get_info(self) -> dict:
-        return {}
+        data = await self.exec_command(self.CMD_POLL)
+        # получаем версию прошивки
+        version_start = 1
+        version_end = 3
+        serial_start = 5
+        serial_end = 8
+        return {
+            'firmware_version': data[version_start:version_end],
+            'serial_number': int.from_bytes(data[serial_start:serial_end], byteorder='little'),
+            # 'serial_number': data[serial_start:serial_end].decode('ascii'),
+        }
 
     async def get_weight(self, measure_unit: int) -> tuple[Decimal, int]:
         data = await self.exec_command(self.CMD_GET_WEIGHT)
@@ -128,8 +152,11 @@ class MassK1C(ScalesDriver):
         division = data[division_index]
         # получаем вес в граммах
         weight_end = 4
-        weight = (int.from_bytes(data[:weight_end], 'little', signed=True)
-                  * self.DIVISION_RATIO.get(division, Decimal('0')))
+        weight = self.gr_to_unit(
+            (int.from_bytes(data[:weight_end], 'little', signed=True)
+             * self.DIVISION_RATIO.get(division, Decimal('0'))),
+            measure_unit
+        )
         # получаем статус
         status_index = 5
         status = self.STATUS_REPR.get(data[status_index], self.STATUS_OVERLOAD)
