@@ -10,12 +10,12 @@ class ScalesDriver(ABC):
     Интерфейс драйвера весов.
     """
     # Единицы измерения веса
-    UNIT_GR = 1
-    UNIT_KG = 2
-    UNIT_LB = 3
+    UNIT_GR = 0
+    UNIT_KG = 1
+    UNIT_LB = 2
     # Статус весов
+    STATUS_UNSTABLE = 0
     STATUS_STABLE = 1
-    STATUS_UNSTABLE = 2
     STATUS_OVERLOAD = 3
 
     def __init__(self, connector: Connector):
@@ -108,6 +108,12 @@ class MassK1C(ScalesDriver):
         3: Decimal('100')
     }
 
+    # Статус весов - представление
+    STATUS_REPR = {
+        0: ScalesDriver.STATUS_UNSTABLE,
+        1: ScalesDriver.STATUS_STABLE
+    }
+
     """
     Интерфейс драйвера.
     """
@@ -117,14 +123,17 @@ class MassK1C(ScalesDriver):
 
     async def get_weight(self, measure_unit: int) -> tuple[Decimal, int]:
         data = await self.exec_command(self.CMD_GET_WEIGHT)
-        # получаем значение веса
-        weight_end = 4
-        weight = int.from_bytes(
-            data[:weight_end], 'little', signed=True)
-        # получаем цену деления, пересчитываем в граммы
+        # получаем цену деления
         division_index = 4
         division = data[division_index]
-        return weight * self.DIVISION_RATIO.get(division, Decimal('0')), 0
+        # получаем вес в граммах
+        weight_end = 4
+        weight = (int.from_bytes(data[:weight_end], 'little', signed=True)
+                  * self.DIVISION_RATIO.get(division, Decimal('0')))
+        # получаем статус
+        status_index = 5
+        status = self.STATUS_REPR.get(data[status_index], self.STATUS_OVERLOAD)
+        return weight, status
 
     """
     Протокол весов.

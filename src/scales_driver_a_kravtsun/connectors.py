@@ -81,7 +81,7 @@ class SocketConnector(Connector):
         try:
             if self.reader is None:
                 await self.connect()
-            data = await asyncio.wait_for(self.reader.read(data_len), 2)
+            data = await asyncio.wait_for(self.reader.read(data_len), 3)
             return data
         except ConnectionError as err:
             self.reader = self.writer = None
