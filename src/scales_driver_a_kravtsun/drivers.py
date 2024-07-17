@@ -54,7 +54,7 @@ class ScalesDriver(ABC):
     @staticmethod
     def to_hex(data: bytes) -> str:
         """
-        Возвращает текстовое представление байт-строки.
+        Возвращает шестнадцатеричное представление байт-строки.
         :param data: Данные.
         :return: Текстовое представление.
         """
@@ -62,30 +62,30 @@ class ScalesDriver(ABC):
 
 
 class CASType6(ScalesDriver):
-    COMMANDS: dict[str, bytes] = {
-        'ACK': b'\x06',
-        'DC1': b'\x11',
-        'ENQ': b'\x05',
-    }
+
+    CMD_ACK = b'\x06'
+    CMD_DC1 = b'\x11'
+    CMD_ENQ = b'\x05'
+
     RESPONSE_PREFIX = b'\x01\x02'
     RESPONSE_SUBFIX = b'\x03\x04'
 
     async def get_info(self) -> dict:
         return {}
 
-    async def get_weight(self, measure_unit) -> tuple[Decimal, int, int]:
-        await self.connector.write(self.COMMANDS['ENQ'])
+    async def get_weight(self, measure_unit) -> tuple[Decimal, int]:
+        await self.connector.write(self.CMD_ENQ)
         ack = await self.connector.read(1)
-        if ack != self.COMMANDS['ACK']:
-            expected = self.COMMANDS['ACK']
-            raise ScalesError(
+        if ack != self.CMD_ACK:
+            expected = self.CMD_ACK
+            raise ConnectionError(
                 f'Incorrect response received from the scale. '
                 f'Expected ACK = {expected}, received: {ack!r}'
             )
-        await self.connector.write(self.COMMANDS['DC1'])
+        await self.connector.write(self.CMD_DC1)
         data = await self.connector.read(15)
         print(data)
-        return Decimal('0'), self.GR, self.OVERLOAD
+        return Decimal('0'), self.STATUS_OVERLOAD
 
     def check_response(self, data):
         pass
@@ -176,7 +176,7 @@ class MassK1C(ScalesDriver):
         data += self.calc_crc(data)
         await self.connector.write(data)
 
-        data: bytes = await self.connector.read(1024)
+        data: bytes = await self.connector.read(self.CMD_RESPONSE_LEN[command])
         return self.check_response(command, data)
 
     def check_response(self, command: bytes, data: bytes) -> bytes:

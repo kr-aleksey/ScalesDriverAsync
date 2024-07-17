@@ -12,7 +12,7 @@ async def poller(device):
         except (ValueError, ConnectionError) as err:
             print('err:', err)
 
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.5)
 
 
 async def main_coro(devices):
@@ -21,14 +21,10 @@ async def main_coro(devices):
 
 
 def main():
-    urls = [
-        '10.1.20.30:9000',
-        # '10.1.20.30:9000',
+    devises = [
+        CASType6(SerialConnector('/dev/ttyUSB0')),
+        MassK1C(SocketConnector('10.1.20.30:9000')),
     ]
-    devises = []
-    for url in urls:
-        connector = SocketConnector(url)
-        devises.append(MassK1C(connector))
     asyncio.run(main_coro(devises))
 
 
