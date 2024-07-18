@@ -2,6 +2,8 @@ import asyncio
 
 from serial_asyncio import open_serial_connection
 
+from exeptions import ConnectorError
+
 
 class Connector:
     connection_coroutines = {
@@ -19,11 +21,11 @@ class Connector:
 
         if connection_type not in self.connection_coroutines:
             raise ValueError(f'Connection type "{connection_type}" '
-                             f'is not supported!')
+                             f'is not supported.')
 
     def __str__(self) -> str:
         conn_params = ', '.join(f'{k}={v}' for k, v in self.kwargs.items())
-        return f'{self.connection_type.capitalize()} connection {conn_params}.'
+        return f'{self.connection_type.capitalize()} connection {conn_params}'
 
     @property
     def connection_coroutine(self):
@@ -36,7 +38,7 @@ class Connector:
         except ValueError as err:
             raise ValueError(f'Configuration error. {err}')
         except OSError as err:
-            raise ConnectionError(err)
+            raise ConnectorError(err)
 
     async def _close_connection(self) -> None:
         if self.writer is not None:
@@ -54,10 +56,10 @@ class Connector:
             return await asyncio.wait_for(self.reader.readexactly(data_len),
                                           self.transfer_timeout)
         except TimeoutError:
-            raise ConnectionError('Receive data timeout')
+            raise ConnectorError('Receive data timeout.')
         except OSError as err:
             await self._close_connection()
-            raise ConnectionError(err)
+            raise ConnectorError(err)
 
     async def write(self, data: bytes) -> None:
         if self.writer is None:
@@ -66,7 +68,7 @@ class Connector:
             self.writer.write(data)
             await asyncio.wait_for(self.writer.drain(), self.transfer_timeout)
         except TimeoutError:
-            raise ConnectionError('Data sending timeout')
+            raise ConnectorError('Data sending timeout.')
         except OSError as err:
             self.reader = self.writer = None
-            raise ConnectionError(err)
+            raise ConnectorError(err)

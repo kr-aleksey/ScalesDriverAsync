@@ -1,19 +1,23 @@
 import asyncio
 
 from drivers import CASType6, MassK1C, ScalesDriver
+from exeptions import ConnectorError, ScalesError
 
 
 async def poller(device):
     while True:
         try:
             value = await device.get_weight(ScalesDriver.UNIT_KG)
-            print(value)
-        except ConnectionError as err:
-            print('err:', err)
+            # value = await device.get_info()
+            print(f'{device}: {value}')
+        except ConnectorError as err:
+            print(f'{device}. {device.connector}. {err}')
+        except ScalesError as err:
+            print(f'{device} error. {err}')
         except ValueError as err:
-            print('err:', err)
+            print(f'{device} error. {err}')
             raise
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(2)
 
 
 async def main_coro(devices):
@@ -23,16 +27,16 @@ async def main_coro(devices):
 
 def main():
     devises = [
-        # CASType6(
-        #     name='Настольные весы',
-        #     connection_type='serial',
-        #     transfer_timeout=1,
-        #     url='/dev/ttyUSB0',
-        #     baudrate=9600,
-        #     bytesize=8,
-        #     parity='N',
-        #     stopbits=1
-        # ),
+        CASType6(
+            name='Настольные весы',
+            connection_type='serial',
+            transfer_timeout=1,
+            url='/dev/ttyUSB0',
+            baudrate=9600,
+            bytesize=8,
+            parity='N',
+            stopbits=1
+        ),
         MassK1C(
             name='Кран',
             connection_type='socket',

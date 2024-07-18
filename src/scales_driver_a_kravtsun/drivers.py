@@ -6,26 +6,27 @@ from exeptions import ScalesError
 
 
 class ScalesDriver(ABC):
-    """
-    Интерфейс драйвера весов.
-    """
-    # Единицы измерения веса
+    # Measure units
     UNIT_GR = 0
     UNIT_KG = 1
     UNIT_LB = 2
     UNIT_OZ = 3
-
-    UNIT_DIVIDER = {
+    # Measure unit ratio
+    UNIT_RATIO = {
         UNIT_GR: Decimal('1'),
         UNIT_KG: Decimal('1000'),
         UNIT_LB: Decimal('453.592'),
         UNIT_OZ: Decimal('28.3495')
     }
-
-    # Статус весов
+    # Scales statuses
     STATUS_UNSTABLE = 0
     STATUS_STABLE = 1
     STATUS_OVERLOAD = 3
+
+    INVALID_RESPONSE_MSG = (
+        'Incorrect response received from the scale. Invalid {subject}. '
+        'Received: {received}, expected: {expected}.'
+    )
 
     def __init__(self,
                  name: str,
@@ -33,38 +34,31 @@ class ScalesDriver(ABC):
                  transfer_timeout: int | float,
                  **kwargs):
         """
-        :param connector: экземпляр класса Connector
+        :param name: Scales name.
         """
         self.name = name
         self.connector = Connector(connection_type=connection_type,
                                    transfer_timeout=transfer_timeout,
                                    **kwargs)
 
-    @abstractmethod
-    async def get_info(self) -> dict:
-        """Возвращает информацию о весах."""
+    def __str__(self):
+        return self.name
 
     @abstractmethod
     async def get_weight(self, measure_unit: int) -> tuple[Decimal, int]:
-        """
-        Получает показания весов. Возвращает результат кортежем (вес, статус).
-        Статус может иметь значения: STATUS_STABLE, STATUS_UNSTABLE,
-        STATUS_OVERLOAD.
-        :param measure_unit: Единица измерения, в которой будет возвращен вес.
-        """
+        """Returns the scale readings and their status."""
+
+    @abstractmethod
+    async def get_info(self) -> str:
+        """Returns scales info."""
 
     @staticmethod
     def to_hex(data: bytes) -> str:
-        """
-        Возвращает шестнадцатеричное представление байт-строки.
-        :param data: Данные.
-        :return: Текстовое представление.
-        """
+        """Returns a hex representation of data."""
         return data.hex(sep=':')
 
 
 class CASType6(ScalesDriver):
-
     CMD_ACK = b'\x06'
     CMD_DC1 = b'\x11'
     CMD_ENQ = b'\x05'
@@ -93,8 +87,8 @@ class CASType6(ScalesDriver):
         b'\x6F\x7A': ScalesDriver.UNIT_OZ
     }
 
-    async def get_info(self) -> dict:
-        return {}
+    async def get_info(self) -> str:
+        return self.name
 
     async def get_weight(self, measure_unit) -> tuple[Decimal, int]:
         data = self.check_response(await self.read_data())
@@ -103,13 +97,18 @@ class CASType6(ScalesDriver):
         scales_measure_unit = self.MEASURE_UNITS[data[self.PAYLOAD_UNIT]]
         try:
             weight = (
-                Decimal(data[self.PAYLOAD_WEIGHT].decode(errors='ignore'))
-                * self.UNIT_DIVIDER[scales_measure_unit]
-                / self.UNIT_DIVIDER[measure_unit]
+                    Decimal(data[self.PAYLOAD_WEIGHT].decode(errors='ignore'))
+                    * self.UNIT_RATIO[scales_measure_unit]
+                    / self.UNIT_RATIO[measure_unit]
             )
         except DecimalException:
-            raise ScalesError('Response parsing error')
-
+            raise ScalesError(
+                self.INVALID_RESPONSE_MSG.format(
+                    subject='scale readings',
+                    received=data[self.PAYLOAD_WEIGHT],
+                    expected='number'
+                )
+            )
         return weight, status
 
     def check_response(self, response: bytes):
@@ -118,25 +117,37 @@ class CASType6(ScalesDriver):
                        + response[self.RESPONSE_SUFFIX])
         if wrap != self.RESPONSE_WRAP:
             raise ScalesError(
-                f'Response wrap={wrap!r}, expected {self.RESPONSE_WRAP!r}')
+                self.INVALID_RESPONSE_MSG.format(
+                    subject='packet wrap',
+                    received=self.to_hex(wrap),
+                    expected=self.to_hex(self.RESPONSE_WRAP)
+                )
+        )
 
         # response BCC
         payload = response[self.RESPONSE_PAYLOAD]
         received_bcc = self.calc_bcc(payload)
         computed_bcc = response[self.RESPONSE_BCC]
         if received_bcc != computed_bcc:
-            raise ScalesError(f'Computed BCC={received_bcc}, '
-                              f'expected {computed_bcc}')
+            raise ScalesError(
+                self.INVALID_RESPONSE_MSG.format(
+                    subject='bcc',
+                    received=self.to_hex(received_bcc),
+                    expected=self.to_hex(computed_bcc)
+                )
+            )
         return payload
 
     async def read_data(self) -> bytes:
         await self.connector.write(self.CMD_ENQ)
         ack = await self.connector.read(len(self.CMD_ACK))
         if ack != self.CMD_ACK:
-            expected = self.CMD_ACK
-            raise ConnectionError(
-                f'Incorrect response received from the scale. '
-                f'Expected ACK = {expected}, received: {ack!r}'
+            raise ScalesError(
+                self.INVALID_RESPONSE_MSG.format(
+                    subject='ACK',
+                    received=self.to_hex(ack),
+                    expected=self.to_hex(self.CMD_ACK)
+                )
             )
         await self.connector.write(self.CMD_DC1)
         return await self.connector.read(15)
@@ -191,21 +202,22 @@ class MassK1C(ScalesDriver):
     Интерфейс драйвера.
     """
 
-    async def get_info(self) -> dict:
+    async def get_info(self) -> str:
         data = await self.exec_command(self.CMD_POLL)
         # получаем версию прошивки
         version_start = 1
         version_end = 3
         serial_start = 5
         serial_end = 8
-        return {
-            'firmware_version': data[version_start:version_end],
-            'serial_number': int.from_bytes(data[serial_start:serial_end], byteorder='little'),
-            # 'serial_number': data[serial_start:serial_end].decode('ascii'),
-        }
+        firmware = int.from_bytes(data[version_start:version_end])
+        serial = int.from_bytes(data[serial_start:serial_end],
+                                byteorder='little')
+        return (f'{self.name}. '
+                f'Firmware version: {firmware}. '
+                f'Serial number: {serial}')
 
     async def get_weight(self, measure_unit: int) -> tuple[Decimal, int]:
-        if measure_unit not in self.UNIT_DIVIDER:
+        if measure_unit not in self.UNIT_RATIO:
             raise ValueError('Invalid measure unit')
         data = await self.exec_command(self.CMD_GET_WEIGHT)
         # получаем цену деления
@@ -214,9 +226,9 @@ class MassK1C(ScalesDriver):
         # получаем вес в граммах
         weight_end = 4
         weight = (
-            int.from_bytes(data[:weight_end], 'little', signed=True)
-            * self.DIVISION_RATIO.get(division, Decimal('0'))
-            / self.UNIT_DIVIDER[measure_unit]
+                int.from_bytes(data[:weight_end], 'little', signed=True)
+                * self.DIVISION_RATIO.get(division, Decimal('0'))
+                / self.UNIT_RATIO[measure_unit]
         )
         # получаем статус
         status_index = 5
@@ -249,24 +261,25 @@ class MassK1C(ScalesDriver):
         :return: Полезные данные.
         """
 
-        err_msg = ('Incorrect response received from the scale. Invalid '
-                   '{subject}. Received: {received}, expected: {expected}.')
-
         # проверяем длину
         if len(data) != self.CMD_RESPONSE_LEN[command]:
             raise ValueError(
-                err_msg.format(subject='response length',
-                               received=len(data),
-                               expected=self.CMD_RESPONSE_LEN[command])
+                self.INVALID_RESPONSE_MSG.format(
+                    subject='response length',
+                    received=len(data),
+                    expected=self.CMD_RESPONSE_LEN[command]
+                )
             )
         # проверяем header
         header_end = 3
         header = data[: header_end]
         if header != self.HEADER:
             raise ValueError(
-                err_msg.format(subject='header',
-                               received=self.to_hex(header),
-                               expected=self.to_hex(self.HEADER))
+                self.INVALID_RESPONSE_MSG.format(
+                    subject='header',
+                    received=self.to_hex(header),
+                    expected=self.to_hex(self.HEADER)
+                )
             )
         # проверяем CRC
         data_start = 5
@@ -276,9 +289,11 @@ class MassK1C(ScalesDriver):
         received_crc = data[crc_start:]
         if computed_crc != data[crc_start:]:
             raise ValueError(
-                err_msg.format(subject='CRC',
-                               received=self.to_hex(received_crc),
-                               expected=self.to_hex(computed_crc))
+                self.INVALID_RESPONSE_MSG.format(
+                    subject='CRC',
+                    received=self.to_hex(received_crc),
+                    expected=self.to_hex(computed_crc)
+                )
             )
         # проверяем ACK
         ack_start = 5
@@ -286,9 +301,11 @@ class MassK1C(ScalesDriver):
         ack = data[ack_start: ack_end]
         if ack != self.CMD_ACK[command]:
             raise ValueError(
-                err_msg.format(subject='ACK',
-                               received=self.to_hex(ack),
-                               expected=self.to_hex(self.CMD_ACK[command]))
+                self.INVALID_RESPONSE_MSG.format(
+                    subject='ACK',
+                    received=self.to_hex(ack),
+                    expected=self.to_hex(self.CMD_ACK[command])
+                )
             )
         # возвращаем payload
         payload_start = 6
