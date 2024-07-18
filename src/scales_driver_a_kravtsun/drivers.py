@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from decimal import Decimal
+from decimal import Decimal, DecimalException
 
 from connector import Connector
 from exeptions import ScalesError
@@ -12,10 +12,14 @@ class ScalesDriver(ABC):
     # Единицы измерения веса
     UNIT_GR = 0
     UNIT_KG = 1
+    UNIT_LB = 2
+    UNIT_OZ = 3
 
     UNIT_DIVIDER = {
         UNIT_GR: Decimal('1'),
         UNIT_KG: Decimal('1000'),
+        UNIT_LB: Decimal('453.592'),
+        UNIT_OZ: Decimal('28.3495')
     }
 
     # Статус весов
@@ -49,15 +53,6 @@ class ScalesDriver(ABC):
         :param measure_unit: Единица измерения, в которой будет возвращен вес.
         """
 
-    def gr_to_unit(self, value: Decimal, measure_unit: int) -> Decimal:
-        """
-        Переводит вес в граммах в заданную единицу.
-        :param value: Вес в граммах
-        :param measure_unit: Единица измерения (UNIT_GR, UNIT_KG)
-        :return: Вес в заданных единицах
-        """
-        return value / self.UNIT_DIVIDER.get(measure_unit, Decimal('1'))
-
     @staticmethod
     def to_hex(data: bytes) -> str:
         """
@@ -74,15 +69,69 @@ class CASType6(ScalesDriver):
     CMD_DC1 = b'\x11'
     CMD_ENQ = b'\x05'
 
-    RESPONSE_PREFIX = b'\x01\x02'
-    RESPONSE_SUBFIX = b'\x03\x04'
+    RESPONSE_WRAP = b'\x01\x02\x03\x04'
+    RESPONSE_PREFIX = slice(0, 2)
+    RESPONSE_SUFFIX = slice(13, 15)
+    RESPONSE_PAYLOAD = slice(2, 12)
+    RESPONSE_BCC = slice(12, 13)
+
+    PAYLOAD_STATUS = slice(0, 1)
+    PAYLOAD_WEIGHT = slice(1, 8)
+    PAYLOAD_UNIT = slice(8, 10)
+
+    STATUS_REPR = {
+        b'\x53': ScalesDriver.STATUS_STABLE,
+        b'\x55': ScalesDriver.STATUS_UNSTABLE,
+        b'\x46': ScalesDriver.STATUS_OVERLOAD
+    }
+
+    MEASURE_UNITS = {
+        b'\x20\x67': ScalesDriver.UNIT_GR,
+        b'\x67\x20': ScalesDriver.UNIT_GR,
+        b'\x6B\x67': ScalesDriver.UNIT_KG,
+        b'\x6C\x62': ScalesDriver.UNIT_LB,
+        b'\x6F\x7A': ScalesDriver.UNIT_OZ
+    }
 
     async def get_info(self) -> dict:
         return {}
 
     async def get_weight(self, measure_unit) -> tuple[Decimal, int]:
+        data = self.check_response(await self.read_data())
+        status = self.STATUS_REPR.get(data[self.PAYLOAD_STATUS],
+                                      self.STATUS_UNSTABLE)
+        scales_measure_unit = self.MEASURE_UNITS[data[self.PAYLOAD_UNIT]]
+        try:
+            weight = (
+                Decimal(data[self.PAYLOAD_WEIGHT].decode(errors='ignore'))
+                * self.UNIT_DIVIDER[scales_measure_unit]
+                / self.UNIT_DIVIDER[measure_unit]
+            )
+        except DecimalException:
+            raise ScalesError('Response parsing error')
+
+        return weight, status
+
+    def check_response(self, response: bytes):
+        # response wrap
+        wrap: bytes = (response[self.RESPONSE_PREFIX]
+                       + response[self.RESPONSE_SUFFIX])
+        if wrap != self.RESPONSE_WRAP:
+            raise ScalesError(
+                f'Response wrap={wrap!r}, expected {self.RESPONSE_WRAP!r}')
+
+        # response BCC
+        payload = response[self.RESPONSE_PAYLOAD]
+        received_bcc = self.calc_bcc(payload)
+        computed_bcc = response[self.RESPONSE_BCC]
+        if received_bcc != computed_bcc:
+            raise ScalesError(f'Computed BCC={received_bcc}, '
+                              f'expected {computed_bcc}')
+        return payload
+
+    async def read_data(self) -> bytes:
         await self.connector.write(self.CMD_ENQ)
-        ack = await self.connector.read(1)
+        ack = await self.connector.read(len(self.CMD_ACK))
         if ack != self.CMD_ACK:
             expected = self.CMD_ACK
             raise ConnectionError(
@@ -90,12 +139,15 @@ class CASType6(ScalesDriver):
                 f'Expected ACK = {expected}, received: {ack!r}'
             )
         await self.connector.write(self.CMD_DC1)
-        data = await self.connector.read(15)
-        print(data)
-        return Decimal('0'), self.STATUS_OVERLOAD
+        return await self.connector.read(15)
 
-    def check_response(self, data):
-        pass
+    @staticmethod
+    def calc_bcc(data: bytes) -> bytes:
+        """Returns BCC for data."""
+        bcc: int = 0
+        for item in data:
+            bcc ^= item
+        return bcc.to_bytes()
 
 
 class MassK1C(ScalesDriver):
@@ -153,16 +205,18 @@ class MassK1C(ScalesDriver):
         }
 
     async def get_weight(self, measure_unit: int) -> tuple[Decimal, int]:
+        if measure_unit not in self.UNIT_DIVIDER:
+            raise ValueError('Invalid measure unit')
         data = await self.exec_command(self.CMD_GET_WEIGHT)
         # получаем цену деления
         division_index = 4
         division = data[division_index]
         # получаем вес в граммах
         weight_end = 4
-        weight = self.gr_to_unit(
-            (int.from_bytes(data[:weight_end], 'little', signed=True)
-             * self.DIVISION_RATIO.get(division, Decimal('0'))),
-            measure_unit
+        weight = (
+            int.from_bytes(data[:weight_end], 'little', signed=True)
+            * self.DIVISION_RATIO.get(division, Decimal('0'))
+            / self.UNIT_DIVIDER[measure_unit]
         )
         # получаем статус
         status_index = 5

@@ -23,16 +23,16 @@ async def main_coro(devices):
 
 def main():
     devises = [
-        CASType6(
-            name='Настольные весы',
-            connection_type='serial',
-            transfer_timeout=1,
-            url='/dev/ttyUSB0',
-            baudrate=9600,
-            bytesize=8,
-            parity='N',
-            stopbits=1
-        ),
+        # CASType6(
+        #     name='Настольные весы',
+        #     connection_type='serial',
+        #     transfer_timeout=1,
+        #     url='/dev/ttyUSB0',
+        #     baudrate=9600,
+        #     bytesize=8,
+        #     parity='N',
+        #     stopbits=1
+        # ),
         MassK1C(
             name='Кран',
             connection_type='socket',
