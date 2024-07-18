@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from decimal import Decimal
 
-from connectors import Connector
+from connector import Connector
 from exeptions import ScalesError
 
 
@@ -23,11 +23,18 @@ class ScalesDriver(ABC):
     STATUS_STABLE = 1
     STATUS_OVERLOAD = 3
 
-    def __init__(self, connector: Connector):
+    def __init__(self,
+                 name: str,
+                 connection_type: str,
+                 transfer_timeout: int | float,
+                 **kwargs):
         """
         :param connector: экземпляр класса Connector
         """
-        self.connector = connector
+        self.name = name
+        self.connector = Connector(connection_type=connection_type,
+                                   transfer_timeout=transfer_timeout,
+                                   **kwargs)
 
     @abstractmethod
     async def get_info(self) -> dict:
@@ -84,7 +91,7 @@ class CASType6(ScalesDriver):
             )
         await self.connector.write(self.CMD_DC1)
         data = await self.connector.read(15)
-        print(data)
+        print(self.connector)
         return Decimal('0'), self.STATUS_OVERLOAD
 
     def check_response(self, data):
