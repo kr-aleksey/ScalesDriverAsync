@@ -17,19 +17,24 @@ class Connector:
         self.transfer_timeout = transfer_timeout
         self.kwargs = kwargs
 
+        if connection_type not in self.connection_coroutines:
+            raise ValueError(f'Connection type "{connection_type}" '
+                             f'is not supported!')
+
     def __str__(self) -> str:
         conn_params = ', '.join(f'{k}={v}' for k, v in self.kwargs.items())
         return f'{self.connection_type.capitalize()} connection {conn_params}.'
 
+    @property
+    def connection_coroutine(self):
+        return self.connection_coroutines[self.connection_type]
+
     async def _open_connection(self) -> None:
         try:
-            self.reader, self.writer = await self.connection_coroutines.get(
-                self.connection_type)(**self.kwargs)
+            self.reader, self.writer = await self.connection_coroutine(
+                **self.kwargs)
         except ValueError as err:
             raise ValueError(f'Configuration error. {err}')
-        except KeyError:
-            raise ValueError(f'Configuration error. Unknown connection type '
-                             f'"{self.connection_type}".')
         except OSError as err:
             raise ConnectionError(err)
 

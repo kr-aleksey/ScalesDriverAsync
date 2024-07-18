@@ -91,7 +91,7 @@ class CASType6(ScalesDriver):
             )
         await self.connector.write(self.CMD_DC1)
         data = await self.connector.read(15)
-        print(self.connector)
+        print(data)
         return Decimal('0'), self.STATUS_OVERLOAD
 
     def check_response(self, data):

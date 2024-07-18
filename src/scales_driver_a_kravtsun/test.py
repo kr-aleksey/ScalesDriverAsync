@@ -33,13 +33,13 @@ def main():
             parity='N',
             stopbits=1
         ),
-        # MassK1C(
-        #     name='Кран',
-        #     connection_type='socket',
-        #     transfer_timeout=1,
-        #     host='10.1.20.30',
-        #     port=9000
-        # ),
+        MassK1C(
+            name='Кран',
+            connection_type='socket',
+            transfer_timeout=1,
+            host='10.1.20.30',
+            port=9000
+        ),
     ]
     asyncio.run(main_coro(devises))
 
