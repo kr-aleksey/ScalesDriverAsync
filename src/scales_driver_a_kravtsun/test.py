@@ -5,10 +5,17 @@ from exeptions import ConnectorError, ScalesError
 
 
 async def poller(device):
+    try:
+        value = await device.get_info()
+        print(f'{device}: {value}')
+    except ConnectorError as err:
+        print(f'{device}. {device.connector}. {err}')
+    except ScalesError as err:
+        print(f'{device} error. {err}')
+
     while True:
         try:
             value = await device.get_weight(ScalesDriver.UNIT_KG)
-            # value = await device.get_info()
             print(f'{device}: {value}')
         except ConnectorError as err:
             print(f'{device}. {device.connector}. {err}')
@@ -28,7 +35,7 @@ async def main_coro(devices):
 def main():
     devises = [
         CASType6(
-            name='Настольные весы',
+            name='Bench scales',
             connection_type='serial',
             transfer_timeout=1,
             url='/dev/ttyUSB0',
@@ -38,7 +45,7 @@ def main():
             stopbits=1
         ),
         MassK1C(
-            name='Кран',
+            name='Crane scales',
             connection_type='socket',
             transfer_timeout=1,
             host='10.1.20.30',

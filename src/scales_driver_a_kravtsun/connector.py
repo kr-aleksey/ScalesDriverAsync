@@ -57,7 +57,7 @@ class Connector:
                                           self.transfer_timeout)
         except TimeoutError:
             raise ConnectorError('Receive data timeout.')
-        except OSError as err:
+        except (OSError, asyncio.IncompleteReadError) as err:
             await self._close_connection()
             raise ConnectorError(err)
 

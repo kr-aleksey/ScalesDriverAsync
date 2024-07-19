@@ -11,6 +11,7 @@ class ScalesDriver(ABC):
     UNIT_KG = 1
     UNIT_LB = 2
     UNIT_OZ = 3
+
     # Measure unit ratio
     UNIT_RATIO = {
         UNIT_GR: Decimal('1'),
@@ -18,6 +19,7 @@ class ScalesDriver(ABC):
         UNIT_LB: Decimal('453.592'),
         UNIT_OZ: Decimal('28.3495')
     }
+
     # Scales statuses
     STATUS_UNSTABLE = 0
     STATUS_STABLE = 1
@@ -25,8 +27,10 @@ class ScalesDriver(ABC):
 
     INVALID_RESPONSE_MSG = (
         'Incorrect response received from the scale. Invalid {subject}. '
-        'Received: {received}, expected: {expected}.'
+        'Received: "{received}", expected: "{expected}".'
     )
+
+    HEX_SEP = ':'
 
     def __init__(self,
                  name: str,
@@ -52,34 +56,36 @@ class ScalesDriver(ABC):
     async def get_info(self) -> str:
         """Returns scales info."""
 
-    @staticmethod
-    def to_hex(data: bytes) -> str:
-        """Returns a hex representation of data."""
-        return data.hex(sep=':')
-
 
 class CASType6(ScalesDriver):
+    # Scales commands
     CMD_ACK = b'\x06'
     CMD_DC1 = b'\x11'
     CMD_ENQ = b'\x05'
 
+    # Response prefix + subfix
     RESPONSE_WRAP = b'\x01\x02\x03\x04'
-    RESPONSE_PREFIX = slice(0, 2)
-    RESPONSE_SUFFIX = slice(13, 15)
-    RESPONSE_PAYLOAD = slice(2, 12)
-    RESPONSE_BCC = slice(12, 13)
 
-    PAYLOAD_STATUS = slice(0, 1)
-    PAYLOAD_WEIGHT = slice(1, 8)
-    PAYLOAD_UNIT = slice(8, 10)
+    # Response fields
+    FIELD_PREFIX = slice(0, 2)
+    FIELD_SUFFIX = slice(13, 15)
+    FIELD_PAYLOAD = slice(2, 12)
+    FIELD_BCC = slice(12, 13)
 
-    STATUS_REPR = {
+    # Response payload fields
+    FIELD_STATUS = slice(0, 1)
+    FIELD_WEIGHT = slice(1, 8)
+    FIELD_UNIT = slice(8, 10)
+
+    # Scales status mapping
+    STATUS_MAPPING = {
         b'\x53': ScalesDriver.STATUS_STABLE,
         b'\x55': ScalesDriver.STATUS_UNSTABLE,
         b'\x46': ScalesDriver.STATUS_OVERLOAD
     }
 
-    MEASURE_UNITS = {
+    # Measure unit mapping
+    MEASURE_MAPPING = {
         b'\x20\x67': ScalesDriver.UNIT_GR,
         b'\x67\x20': ScalesDriver.UNIT_GR,
         b'\x6B\x67': ScalesDriver.UNIT_KG,
@@ -91,49 +97,67 @@ class CASType6(ScalesDriver):
         return self.name
 
     async def get_weight(self, measure_unit) -> tuple[Decimal, int]:
-        data = self.check_response(await self.read_data())
-        status = self.STATUS_REPR.get(data[self.PAYLOAD_STATUS],
-                                      self.STATUS_UNSTABLE)
-        scales_measure_unit = self.MEASURE_UNITS[data[self.PAYLOAD_UNIT]]
-        try:
-            weight = (
-                    Decimal(data[self.PAYLOAD_WEIGHT].decode(errors='ignore'))
-                    * self.UNIT_RATIO[scales_measure_unit]
-                    / self.UNIT_RATIO[measure_unit]
+        payload = self.check_response(await self.read_data())
+        # get status
+        status = self.STATUS_MAPPING.get(payload[self.FIELD_STATUS],
+                                         self.STATUS_UNSTABLE)
+        # get unit
+        scales_unit = payload[self.FIELD_UNIT]
+        if scales_unit not in self.MEASURE_MAPPING:
+            raise ScalesError(
+                self.INVALID_RESPONSE_MSG.format(
+                    subject='measure unit',
+                    received=scales_unit,
+                    expected=', '.join(map(str, self.MEASURE_MAPPING)),
+                )
             )
+        # get the weight
+        try:
+            weight = Decimal(
+                payload[self.FIELD_WEIGHT].decode(errors='ignore'))
         except DecimalException:
             raise ScalesError(
                 self.INVALID_RESPONSE_MSG.format(
                     subject='scale readings',
-                    received=data[self.PAYLOAD_WEIGHT],
+                    received=payload[self.FIELD_WEIGHT].decode(
+                        errors='ignore'),
                     expected='number'
                 )
             )
+        # convert unit
+        weight = (weight
+                  * self.UNIT_RATIO[self.MEASURE_MAPPING[scales_unit]]
+                  / self.UNIT_RATIO[measure_unit])
+
         return weight, status
 
-    def check_response(self, response: bytes):
-        # response wrap
-        wrap: bytes = (response[self.RESPONSE_PREFIX]
-                       + response[self.RESPONSE_SUFFIX])
+    def check_response(self, response: bytes) -> bytes:
+        """
+        Checks the response received from the scales.
+        Returns the response payload (without prefix and subfix).
+        :param response: Response data
+        :return: Payload
+        """
+        # check response wrap
+        wrap = response[self.FIELD_PREFIX] + response[self.FIELD_SUFFIX]
         if wrap != self.RESPONSE_WRAP:
             raise ScalesError(
                 self.INVALID_RESPONSE_MSG.format(
                     subject='packet wrap',
-                    received=self.to_hex(wrap),
-                    expected=self.to_hex(self.RESPONSE_WRAP)
+                    received=wrap.hex(self.HEX_SEP),
+                    expected=self.RESPONSE_WRAP.hex(self.HEX_SEP)
                 )
-        )
-
-        # response BCC
-        payload = response[self.RESPONSE_PAYLOAD]
+            )
+        # check response BCC
+        payload = response[self.FIELD_PAYLOAD]
         received_bcc = self.calc_bcc(payload)
-        computed_bcc = response[self.RESPONSE_BCC]
+        computed_bcc = response[self.FIELD_BCC]
         if received_bcc != computed_bcc:
             raise ScalesError(
                 self.INVALID_RESPONSE_MSG.format(
                     subject='bcc',
-                    received=self.to_hex(received_bcc),
-                    expected=self.to_hex(computed_bcc)
+                    received=received_bcc.hex(self.HEX_SEP),
+                    expected=computed_bcc.hex(self.HEX_SEP)
                 )
             )
         return payload
@@ -145,8 +169,8 @@ class CASType6(ScalesDriver):
             raise ScalesError(
                 self.INVALID_RESPONSE_MSG.format(
                     subject='ACK',
-                    received=self.to_hex(ack),
-                    expected=self.to_hex(self.CMD_ACK)
+                    received=ack.hex(self.HEX_SEP),
+                    expected=self.CMD_ACK.hex(self.HEX_SEP)
                 )
             )
         await self.connector.write(self.CMD_DC1)
@@ -165,85 +189,96 @@ class MassK1C(ScalesDriver):
     """
     Драйвер весов Масса-К. Протокол "1С".
     """
-    # Заголовок пакетов
+    # Packet header (request and response)
     HEADER = b'\xF8\x55\xCE'
 
-    # Команды исполняемые весами
-    CMD_POLL = b'\x00'
-    CMD_GET_WEIGHT = b'\xA0'
+    # Scales commands
+    CMD_POLL = b'\x00'  # Get firmware version and serial number
+    CMD_GET_WEIGHT = b'\xA0'  # Get current scale reading
 
-    # Ответные ACK
+    # Commands ACK
     CMD_ACK = {
         CMD_POLL: b'\x01',
         CMD_GET_WEIGHT: b'\x10'
     }
 
-    # Ожидаемые длины ответов
+    # Responses lengths
     CMD_RESPONSE_LEN = {
         CMD_POLL: 34,
         CMD_GET_WEIGHT: 14
     }
 
-    # Цена деления - коэффициент пересчета в граммы
-    DIVISION_RATIO = {
-        0: Decimal('0.1'),
-        1: Decimal('1'),
-        2: Decimal('10'),
-        3: Decimal('100')
+    # Response fields
+    FIELD_HEADER = slice(0, 3)
+    FIELD_ACK = slice(5, 6)
+    FIELD_PAYLOAD = slice(5, -2)
+    FIELD_CRC = slice(-2, None)
+
+    # Response payload fields
+    # CMD_POLL
+    FIELD_FW_MAJOR = 5
+    FIELD_FW_MINOR = 4
+    FIELD_SERIAL = slice(6, 10)
+    # CMD_GET_WEIGHT
+    FIELD_WEIGHT = slice(1, 5)
+    FIELD_DIVISION = 5
+    FIELD_STATUS = 6
+
+    # Conversion factors for divisions
+    DIVISION_FACTOR = {
+        0: Decimal('0.1'),  # 100 mg
+        1: Decimal('1'),  # 1 g
+        2: Decimal('10'),  # 10 g
+        3: Decimal('100'),  # 100 g
+        4: Decimal('1000')  # 1 kg
     }
 
-    # Статус весов - представление
+    # Status mapping
     STATUS_REPR = {
         0: ScalesDriver.STATUS_UNSTABLE,
         1: ScalesDriver.STATUS_STABLE
     }
 
-    """
-    Интерфейс драйвера.
-    """
-
     async def get_info(self) -> str:
-        data = await self.exec_command(self.CMD_POLL)
-        # получаем версию прошивки
-        version_start = 1
-        version_end = 3
-        serial_start = 5
-        serial_end = 8
-        firmware = int.from_bytes(data[version_start:version_end])
-        serial = int.from_bytes(data[serial_start:serial_end],
-                                byteorder='little')
-        return (f'{self.name}. '
+        payload = await self.exec_command(self.CMD_POLL)
+        firmware = (f'{payload[self.FIELD_FW_MAJOR]}.'
+                    f'{payload[self.FIELD_FW_MINOR]}')
+        serial = int.from_bytes(payload[self.FIELD_SERIAL], byteorder='little')
+        return (f'{self.name.capitalize()}. '
                 f'Firmware version: {firmware}. '
                 f'Serial number: {serial}')
 
     async def get_weight(self, measure_unit: int) -> tuple[Decimal, int]:
         if measure_unit not in self.UNIT_RATIO:
-            raise ValueError('Invalid measure unit')
-        data = await self.exec_command(self.CMD_GET_WEIGHT)
-        # получаем цену деления
-        division_index = 4
-        division = data[division_index]
-        # получаем вес в граммах
-        weight_end = 4
+            raise ValueError('Invalid measure unit.')
+        payload = await self.exec_command(self.CMD_GET_WEIGHT)
+        # value of division
+        division = payload[self.FIELD_DIVISION]
+        if division not in self.DIVISION_FACTOR:
+            raise ScalesError(
+                self.INVALID_RESPONSE_MSG.format(
+                    subject='division cost',
+                    received=division,
+                    expected=', '.join(map(str, self.DIVISION_FACTOR))
+                )
+            )
+        # weight in measure_unit
         weight = (
-                int.from_bytes(data[:weight_end], 'little', signed=True)
-                * self.DIVISION_RATIO.get(division, Decimal('0'))
+                int.from_bytes(
+                    payload[self.FIELD_WEIGHT], 'little', signed=True)
+                * self.DIVISION_FACTOR[division]
                 / self.UNIT_RATIO[measure_unit]
         )
-        # получаем статус
-        status_index = 5
-        status = self.STATUS_REPR.get(data[status_index], self.STATUS_OVERLOAD)
+        # scales status
+        status = self.STATUS_REPR.get(
+            payload[self.FIELD_STATUS], self.STATUS_OVERLOAD)
         return weight, status
-
-    """
-    Протокол весов.
-    """
 
     async def exec_command(self, command: bytes) -> bytes:
         """
-        Подготавливает и отправляет запрос. Возвращает полезные данные ответа.
-        :param command: Выполняемая команда (CMD_GET_WEIGHT, CMD_POLL ...).
-        :return: Данные ответа.
+        Prepares and sends the request. Returns the response payload.
+        :param command: Command (CMD_GET_WEIGHT, CMD_POLL ...).
+        :return: Response payload.
         """
         data = self.HEADER + len(command).to_bytes(length=2) + command
         data += self.calc_crc(data)
@@ -252,72 +287,56 @@ class MassK1C(ScalesDriver):
         data: bytes = await self.connector.read(self.CMD_RESPONSE_LEN[command])
         return self.check_response(command, data)
 
-    def check_response(self, command: bytes, data: bytes) -> bytes:
+    def check_response(self, command: bytes, response: bytes) -> bytes:
         """
-        Проверяет ответ, полученный от весов. Возвращает полезные данные
-        ответа (без заголовка, длины ответа, ACK и CRC).
-        :param command: Команда отправленная весам.
-        :param data: Ответ полученный от весов.
-        :return: Полезные данные.
+        Checks the response received from the scales.
+        Returns the response payload (without header, response length,
+        ACK and CRC).
+        :param command: Request command.
+        :param response: Response data.
+        :return: Payload.
         """
-
-        # проверяем длину
-        if len(data) != self.CMD_RESPONSE_LEN[command]:
-            raise ValueError(
-                self.INVALID_RESPONSE_MSG.format(
-                    subject='response length',
-                    received=len(data),
-                    expected=self.CMD_RESPONSE_LEN[command]
-                )
-            )
-        # проверяем header
-        header_end = 3
-        header = data[: header_end]
+        # check header
+        header = response[self.FIELD_HEADER]
         if header != self.HEADER:
-            raise ValueError(
+            raise ScalesError(
                 self.INVALID_RESPONSE_MSG.format(
                     subject='header',
-                    received=self.to_hex(header),
-                    expected=self.to_hex(self.HEADER)
+                    received=header.hex(self.HEX_SEP),
+                    expected=self.HEADER.hex(self.HEX_SEP)
                 )
             )
-        # проверяем CRC
-        data_start = 5
-        data_end = -2
-        crc_start = -2
-        computed_crc = self.calc_crc(data[data_start: data_end])
-        received_crc = data[crc_start:]
-        if computed_crc != data[crc_start:]:
-            raise ValueError(
+        # check CRC
+        payload = response[self.FIELD_PAYLOAD]
+        computed_crc = self.calc_crc(payload)
+        received_crc = response[self.FIELD_CRC]
+        if computed_crc != received_crc:
+            raise ScalesError(
                 self.INVALID_RESPONSE_MSG.format(
                     subject='CRC',
-                    received=self.to_hex(received_crc),
-                    expected=self.to_hex(computed_crc)
+                    received=received_crc.hex(self.HEX_SEP),
+                    expected=computed_crc.hex(self.HEX_SEP)
                 )
             )
-        # проверяем ACK
-        ack_start = 5
-        ack_end = 6
-        ack = data[ack_start: ack_end]
-        if ack != self.CMD_ACK[command]:
-            raise ValueError(
+        # check ACK
+        ack = response[self.FIELD_ACK]
+        expected_ack = self.CMD_ACK[command]
+        if ack != expected_ack:
+            raise ScalesError(
                 self.INVALID_RESPONSE_MSG.format(
                     subject='ACK',
-                    received=self.to_hex(ack),
-                    expected=self.to_hex(self.CMD_ACK[command])
+                    received=ack.hex(self.HEX_SEP),
+                    expected=expected_ack.hex(self.HEX_SEP)
                 )
             )
-        # возвращаем payload
-        payload_start = 6
-        payload_end = -2
-        return data[payload_start: payload_end]
+        return payload
 
     @staticmethod
     def calc_crc(data: bytes) -> bytes:
         """
-        Подсчет CRC пакетов данных.
-        :param data: Данные.
-        :return: CRC
+        Calculates the CRC of the data.
+        :param data: Data to calculate.
+        :return: CRC.
         """
         poly = 0x1021
         crc = 0
