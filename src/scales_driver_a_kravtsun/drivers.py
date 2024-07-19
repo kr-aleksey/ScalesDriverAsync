@@ -1,3 +1,4 @@
+import asyncio
 from abc import ABC, abstractmethod
 from decimal import Decimal, DecimalException
 
@@ -39,11 +40,17 @@ class ScalesDriver(ABC):
                  **kwargs):
         """
         :param name: Scales name.
+        :param connection_type: Connection type ('serial' or 'socket').
+        :param transfer_timeout: Transfer timeout in seconds.
+        :param kwargs: Connection parameters. Host and port for
+        socket connection. Url, baudrate, bytesize, parity and stopbits
+        for serial connection.
         """
         self.name = name
         self.connector = Connector(connection_type=connection_type,
                                    transfer_timeout=transfer_timeout,
                                    **kwargs)
+        self.lock = asyncio.Lock()
 
     def __str__(self):
         return self.name
@@ -163,18 +170,19 @@ class CASType6(ScalesDriver):
         return payload
 
     async def read_data(self) -> bytes:
-        await self.connector.write(self.CMD_ENQ)
-        ack = await self.connector.read(len(self.CMD_ACK))
-        if ack != self.CMD_ACK:
-            raise ScalesError(
-                self.INVALID_RESPONSE_MSG.format(
-                    subject='ACK',
-                    received=ack.hex(self.HEX_SEP),
-                    expected=self.CMD_ACK.hex(self.HEX_SEP)
+        async with self.lock:
+            await self.connector.write(self.CMD_ENQ)
+            ack = await self.connector.read(len(self.CMD_ACK))
+            if ack != self.CMD_ACK:
+                raise ScalesError(
+                    self.INVALID_RESPONSE_MSG.format(
+                        subject='ACK',
+                        received=ack.hex(self.HEX_SEP),
+                        expected=self.CMD_ACK.hex(self.HEX_SEP)
+                    )
                 )
-            )
-        await self.connector.write(self.CMD_DC1)
-        return await self.connector.read(15)
+            await self.connector.write(self.CMD_DC1)
+            return await self.connector.read(15)
 
     @staticmethod
     def calc_bcc(data: bytes) -> bytes:
@@ -280,12 +288,14 @@ class MassK1C(ScalesDriver):
         :param command: Command (CMD_GET_WEIGHT, CMD_POLL ...).
         :return: Response payload.
         """
-        data = self.HEADER + len(command).to_bytes(length=2) + command
-        data += self.calc_crc(data)
-        await self.connector.write(data)
+        async with self.lock:
+            data = self.HEADER + len(command).to_bytes(length=2) + command
+            data += self.calc_crc(data)
+            await self.connector.write(data)
 
-        data: bytes = await self.connector.read(self.CMD_RESPONSE_LEN[command])
-        return self.check_response(command, data)
+            data: bytes = await self.connector.read(
+                self.CMD_RESPONSE_LEN[command])
+            return self.check_response(command, data)
 
     def check_response(self, command: bytes, response: bytes) -> bytes:
         """

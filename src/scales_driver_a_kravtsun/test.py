@@ -33,7 +33,7 @@ async def main_coro(devices):
 
 
 def main():
-    devises = [
+    devices = [
         CASType6(
             name='Bench scales',
             connection_type='serial',
@@ -52,7 +52,7 @@ def main():
             port=9000
         ),
     ]
-    asyncio.run(main_coro(devises))
+    asyncio.run(main_coro(devices))
 
 
 if __name__ == '__main__':
