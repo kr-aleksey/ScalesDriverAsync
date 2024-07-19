@@ -24,7 +24,7 @@ async def poller(device):
         except ValueError as err:
             print(f'{device} error. {err}')
             raise
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
 
 
 async def main_coro(devices):

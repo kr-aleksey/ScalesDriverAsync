@@ -107,7 +107,9 @@ class CASType6(ScalesDriver):
         payload = self.check_response(await self.read_data())
         # get status
         status = self.STATUS_MAPPING.get(payload[self.FIELD_STATUS],
-                                         self.STATUS_UNSTABLE)
+                                         self.STATUS_OVERLOAD)
+        if status == self.STATUS_OVERLOAD:
+            return Decimal('0'), status
         # get unit
         scales_unit = payload[self.FIELD_UNIT]
         if scales_unit not in self.MEASURE_MAPPING:
@@ -260,6 +262,11 @@ class MassK1C(ScalesDriver):
         if measure_unit not in self.UNIT_RATIO:
             raise ValueError('Invalid measure unit.')
         payload = await self.exec_command(self.CMD_GET_WEIGHT)
+        # scales status
+        status = self.STATUS_REPR.get(
+            payload[self.FIELD_STATUS], self.STATUS_OVERLOAD)
+        if status == self.STATUS_OVERLOAD:
+            return Decimal('0'), status
         # value of division
         division = payload[self.FIELD_DIVISION]
         if division not in self.DIVISION_FACTOR:
@@ -277,9 +284,6 @@ class MassK1C(ScalesDriver):
                 * self.DIVISION_FACTOR[division]
                 / self.UNIT_RATIO[measure_unit]
         )
-        # scales status
-        status = self.STATUS_REPR.get(
-            payload[self.FIELD_STATUS], self.STATUS_OVERLOAD)
         return weight, status
 
     async def exec_command(self, command: bytes) -> bytes:
