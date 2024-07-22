@@ -2,7 +2,7 @@ import asyncio
 
 from serial_asyncio import open_serial_connection
 
-from exeptions import ConnectorError
+from scales_driver_async.exeptions import ConnectorError
 
 
 class Connector:

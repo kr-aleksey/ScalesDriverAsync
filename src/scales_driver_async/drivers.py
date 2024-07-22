@@ -2,8 +2,8 @@ import asyncio
 from abc import ABC, abstractmethod
 from decimal import Decimal, DecimalException
 
-from connector import Connector
-from exeptions import ScalesError
+from scales_driver_async.connector import Connector
+from scales_driver_async.exeptions import ScalesError
 
 
 class ScalesDriver(ABC):

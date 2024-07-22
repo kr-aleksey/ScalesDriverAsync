@@ -1,7 +1,7 @@
 import asyncio
 
-from drivers import CASType6, MassK1C, ScalesDriver
-from exeptions import ConnectorError, ScalesError
+from scales_driver_async.drivers import CASType6, MassK1C, ScalesDriver
+from scales_driver_async.exeptions import ConnectorError, ScalesError
 
 
 async def poller(device):

@@ -16,8 +16,36 @@
 Модуль **drivers** предоставляет реализации протоколов обмена данными.
 
 ## Requirements
-Для передачи данных через последовательный порт используется библиотека 
-[pyserial-asyncio](https://pypi.org/project/pyserial-asyncio/)
+- Python >= 3.10
+- [pyserial-asyncio](https://pypi.org/project/pyserial-asyncio/)
+
+## Usage
+`pip install scales-driver-async`
+
+
+```python
+import asyncio
+
+from scales_driver_async.drivers import CASType6, ScalesDriver
+
+
+async def main():
+    scales = CASType6(
+            name='Bench scales',
+            connection_type='serial',
+            transfer_timeout=1,
+            url='/dev/ttyUSB0',
+            baudrate=9600,
+            bytesize=8,
+            parity='N',
+            stopbits=1
+    )
+    print(await scales.get_weight(ScalesDriver.UNIT_KG))
+
+asyncio.run(main())
+
+```
+
 
 ## Class connector.Connector
 **Connector** предоставляет высокоуровневый API для получения и отправки данных. Работает поверх `asyncio.StreamReader` 
