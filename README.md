@@ -17,15 +17,15 @@
 
 ## Requirements
 Для передачи данных через последовательный порт используется библиотека 
-[pyserial-asyncio](https://pypi.org/project/pyserial-asyncio/)!
+[pyserial-asyncio](https://pypi.org/project/pyserial-asyncio/)
 
 ## Class connector.Connector
 **Connector** предоставляет высокоуровневый API для получения и отправки данных. Работает поверх `asyncio.StreamReader` 
 и `asyncio.StreamWriter`. Конструктор принимает параметры `connection_type`, `transfer_timout` и другие ключевые 
-параметры (kwargs). Параметр `connection_type`может иметь значение 'socket' или 'serial'. Параметр 
-`transfer_timout` - число, время ожидание отправки и получения данных в секундах. Kwargs должны иметь значения 
+параметры (`kwargs`). Параметр `connection_type`может иметь значение 'socket' или 'serial'. Параметр 
+`transfer_timout` - число, время ожидание отправки и получения данных в секундах. `Kwargs` должны иметь значения 
 параметров соединения передаваемых в функцию `asyncio.open_connection(**kwargs)` или 
-`serial_asyncio.import open_serial_connection(**kwargs)`
+`serial_asyncio.open_serial_connection(**kwargs)`.
 
 ```python
 async def main():
@@ -57,7 +57,7 @@ async def main():
 ***ScalesDriver*** - абстрактный класс предоставляющий высокоуровневый API весов. Классы модуля `drivers` наследуются 
 от ***ScalesDriver*** и реализуют протокол весов. Любой протокол может работать через сокет или последовательный порт.
 Пока реализовано два протокола `CASType6` (CAS type #6) и `MassK1C` (Масса-К 1С). Протокол CAS type #6 поддерживают 
-многие весы разных брендов. Масса-К 1С - протокол [АО "МАССА-К" ](https://massa.ru/)!.
+многие весы разных брендов. Масса-К 1С - протокол [АО "МАССА-К" ](https://massa.ru/).
 
 ```python
 async def main():
