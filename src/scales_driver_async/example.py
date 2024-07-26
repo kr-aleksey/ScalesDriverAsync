@@ -21,9 +21,6 @@ async def poller(device):
             print(f'{device}. {device.connector}. {err}')
         except ScalesError as err:
             print(f'{device} error. {err}')
-        except ValueError as err:
-            print(f'{device} error. {err}')
-            raise
         await asyncio.sleep(1)
 
 
@@ -35,17 +32,17 @@ async def main_coro(devices):
 def main():
     devices = [
         CASType6(
-            name='Bench scales',
+            'Bench scales',
             connection_type='serial',
             transfer_timeout=1,
-            url='/dev/ttyUSB0',
+            port='/dev/ttyUSB0',
             baudrate=9600,
             bytesize=8,
             parity='N',
             stopbits=1
         ),
         MassK1C(
-            name='Crane scales',
+            'Crane scales',
             connection_type='socket',
             transfer_timeout=1,
             host='10.1.20.30',

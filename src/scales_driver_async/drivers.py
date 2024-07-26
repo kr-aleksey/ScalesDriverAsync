@@ -43,8 +43,8 @@ class ScalesDriver(ABC):
         :param connection_type: Connection type ('serial' or 'socket').
         :param transfer_timeout: Transfer timeout in seconds.
         :param kwargs: Connection parameters. Host and port for
-        socket connection. Url, baudrate, bytesize, parity and stopbits
-        for serial connection.
+        socket connection. Port, baudrate, bytesize, parity, stopbits,
+        xonxoff, rtscts and dsrdtr for serial connection.
         """
         self.name = name
         self.connector = Connector(connection_type=connection_type,

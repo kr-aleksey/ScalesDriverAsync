@@ -13,18 +13,29 @@ class Connector:
 
     def __init__(self,
                  connection_type: str,
-                 transfer_timeout: int | float, **kwargs) -> None:
+                 transfer_timeout: int | float,
+                 **kwargs) -> None:
         self.reader = self.writer = None
         self.connection_type = connection_type
         self.transfer_timeout = transfer_timeout
-        self.kwargs = kwargs
 
         if connection_type not in self.connection_coroutines:
             raise ValueError(f'Connection type "{connection_type}" '
                              f'is not supported.')
+        if connection_type == 'serial':
+            missing_kwargs = {'port', } - kwargs.keys()
+            kwargs['url'] = kwargs.pop('port', None)
+        else:
+            missing_kwargs = {'host', 'port'} - kwargs.keys()
+        if missing_kwargs:
+            raise ValueError(
+                f'Required connection parameters are missing: {missing_kwargs}'
+            )
+        self.connection_params = kwargs
 
     def __str__(self) -> str:
-        conn_params = ', '.join(f'{k}={v}' for k, v in self.kwargs.items())
+        conn_params = (
+            ', '.join(f'{k}={v}' for k, v in self.connection_params.items()))
         return f'{self.connection_type.capitalize()} connection {conn_params}'
 
     @property
@@ -34,7 +45,7 @@ class Connector:
     async def _open_connection(self) -> None:
         try:
             self.reader, self.writer = await self.connection_coroutine(
-                **self.kwargs)
+                **self.connection_params)
         except ValueError as err:
             raise ValueError(f'Configuration error. {err}')
         except OSError as err:
