@@ -44,8 +44,12 @@ class Connector:
 
     async def _open_connection(self) -> None:
         try:
-            self.reader, self.writer = await self.connection_coroutine(
-                **self.connection_params)
+            self.reader, self.writer = await asyncio.wait_for(
+                self.connection_coroutine(**self.connection_params),
+                self.transfer_timeout
+            )
+        except TimeoutError:
+            raise ConnectorError('Connection timout.')
         except ValueError as err:
             raise ValueError(f'Configuration error. {err}')
         except OSError as err:

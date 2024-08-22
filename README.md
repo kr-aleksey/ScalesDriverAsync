@@ -13,7 +13,8 @@
 Класс **Connector** модуля connector предоставляет высокоуровневый интерфейс для отправки и получения данных. Кроме 
 того он предоставляет логику для простой обработки ошибок передачи данных и восстановления соединения после сбоев.
 
-Модуль **drivers** предоставляет реализации протоколов обмена данными.
+Модуль **drivers** предоставляет реализации протоколов обмена данными. Пока реализовано только два протокола CAS type 6 
+(class CASType6) и проприетарный протокол Масса-К 1С (class MassK1C).
 
 ## Requirements
 - Python >= 3.10
@@ -45,6 +46,8 @@ async def main():
 asyncio.run(main())
 
 ```
+Расширенный пример смотрите в 
+[example.py](https://github.com/kr-aleksey/ScalesDriverAsync/blob/main/src/scales_driver_async/example.py).
 
 
 ## Class connector.Connector
