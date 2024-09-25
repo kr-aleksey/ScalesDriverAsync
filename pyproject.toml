@@ -1,6 +1,6 @@
 [project]
 name = "scales_driver_async"
-version = "0.0.8"
+version = "0.0.9"
 authors = [
   { name="Aleksey Kravtsun", email="kravtsun.aleksey@gmail.com" },
 ]
