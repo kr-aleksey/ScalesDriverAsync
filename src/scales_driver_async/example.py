@@ -41,7 +41,7 @@ def main():
             'Bench scales',
             connection_type='serial',
             transfer_timeout=1,
-            port='COM6',
+            port='/dev/ttyUSB0',
             baudrate=9600,
             bytesize=8,
             parity='N',
