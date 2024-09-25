@@ -184,7 +184,8 @@ class CASType6(ScalesDriver):
                     )
                 )
             await self.connector.write(self.CMD_DC1)
-            return await self.connector.read(15)
+            data = await self.connector.read(15)
+        return data
 
     @staticmethod
     def calc_bcc(data: bytes) -> bytes:
@@ -244,7 +245,7 @@ class MassK1C(ScalesDriver):
     }
 
     # Status mapping
-    STATUS_REPR = {
+    STATUS_MAPPING = {
         0: ScalesDriver.STATUS_UNSTABLE,
         1: ScalesDriver.STATUS_STABLE
     }
@@ -260,10 +261,11 @@ class MassK1C(ScalesDriver):
 
     async def get_weight(self, measure_unit: int) -> tuple[Decimal, int]:
         if measure_unit not in self.UNIT_RATIO:
-            raise ValueError('Invalid measure unit.')
+            raise ValueError(f'Invalid measure unit. '
+                             f'Use one of {list(self.UNIT_RATIO.keys())}')
         payload = await self.exec_command(self.CMD_GET_WEIGHT)
         # scales status
-        status = self.STATUS_REPR.get(
+        status = self.STATUS_MAPPING.get(
             payload[self.FIELD_STATUS], self.STATUS_OVERLOAD)
         if status == self.STATUS_OVERLOAD:
             return Decimal('0'), status
@@ -293,13 +295,14 @@ class MassK1C(ScalesDriver):
         :return: Response payload.
         """
         async with self.lock:
-            data = self.HEADER + len(command).to_bytes(length=2) + command
+            data: bytes = (self.HEADER
+                           + len(command).to_bytes(length=2)
+                           + command)
             data += self.calc_crc(data)
             await self.connector.write(data)
 
-            data: bytes = await self.connector.read(
-                self.CMD_RESPONSE_LEN[command])
-            return self.check_response(command, data)
+            data = await self.connector.read(self.CMD_RESPONSE_LEN[command])
+        return self.check_response(command, data)
 
     def check_response(self, command: bytes, response: bytes) -> bytes:
         """
