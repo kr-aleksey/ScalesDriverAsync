@@ -9,6 +9,7 @@ statuses = {
     ScalesDriver.STATUS_OVERLOAD: 'overload'
 }
 
+
 async def poller(device):
     try:
         info = await device.get_info()
