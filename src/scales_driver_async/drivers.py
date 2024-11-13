@@ -177,10 +177,9 @@ class CASType6(ScalesDriver):
                 )
             )
         # convert unit
-        weight = (weight
-                  * self.UNIT_RATIO[self.MEASURE_MAPPING[scales_unit]]
-                  / self.UNIT_RATIO[measure_unit])
-
+        weight = self.convert_unit(weight,
+                                   self.MEASURE_MAPPING[scales_unit],
+                                   measure_unit)
         return weight, status
 
     def check_response(self, response: bytes) -> bytes:
