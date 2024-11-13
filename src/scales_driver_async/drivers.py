@@ -3,7 +3,8 @@ from abc import ABC, abstractmethod
 from decimal import Decimal, DecimalException
 
 from scales_driver_async.connector import Connector
-from scales_driver_async.exeptions import ScalesError
+from scales_driver_async.exeptions import ScalesError, \
+    ScalesFunctionNotSupported
 
 
 class ScalesDriver(ABC):
@@ -30,7 +31,7 @@ class ScalesDriver(ABC):
         'Incorrect response received from the scale. Invalid {subject}. '
         'Received: "{received}", expected: "{expected}".'
     )
-
+    INVALID_MEASURE_MSG = 'Unit {from_unit} is not supported.'
     HEX_SEP = ':'
 
     def __init__(self,
@@ -62,6 +63,48 @@ class ScalesDriver(ABC):
     @abstractmethod
     async def get_info(self) -> str:
         """Returns scales info."""
+
+    async def set_weight(self,
+                         weight: Decimal,
+                         measure_unit: int,
+                         status: int) -> None:
+        """Setting the scale readings."""
+        raise ScalesFunctionNotSupported('This function is not supported.')
+
+    def convert_unit(self,
+                     weight: Decimal,
+                     from_unit: int,
+                     to_unit: int) -> Decimal:
+        """Converts the scale readings to a specific unit."""
+        if from_unit not in self.UNIT_RATIO:
+            raise ValueError(self.INVALID_MEASURE_MSG.format(unit=from_unit))
+        if to_unit not in self.UNIT_RATIO:
+            raise ValueError(self.INVALID_MEASURE_MSG.format(unit=to_unit))
+        return weight * self.UNIT_RATIO[from_unit] / self.UNIT_RATIO[to_unit]
+
+
+class FakeScales(ScalesDriver):
+    def __init__(self,
+                 name: str,
+                 connection_type: str,
+                 transfer_timeout: int | float, **kwargs):
+        super().__init__(name, connection_type, transfer_timeout, **kwargs)
+        self.weight_gr: Decimal = Decimal(0)
+        self.status: int = self.STATUS_STABLE
+
+    async def get_weight(self, measure_unit: int) -> tuple[Decimal, int]:
+        weight = self.convert_unit(self.weight_gr, self.UNIT_GR, measure_unit)
+        return weight, self.status
+
+    async def set_weight(self,
+                         weight: Decimal,
+                         measure_unit: int,
+                         status: int) -> None:
+        self.weight_gr = self.convert_unit(weight, measure_unit, self.UNIT_GR)
+        self.status = status
+
+    async def get_info(self) -> str:
+        return f'{self.name} - fake scales.'
 
 
 class CASType6(ScalesDriver):

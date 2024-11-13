@@ -8,3 +8,7 @@ class ConnectorError(Exception):
 
 class ScalesError(Exception):
     pass
+
+
+class ScalesFunctionNotSupported(ScalesError):
+    pass
