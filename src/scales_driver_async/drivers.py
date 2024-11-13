@@ -3,8 +3,8 @@ from abc import ABC, abstractmethod
 from decimal import Decimal, DecimalException
 
 from scales_driver_async.connector import Connector
-from scales_driver_async.exeptions import ScalesError, \
-    ScalesFunctionNotSupported
+from scales_driver_async.exeptions import (ScalesError,
+                                           ScalesFunctionNotSupported)
 
 
 class ScalesDriver(ABC):
